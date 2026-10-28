@@ -1,5 +1,5 @@
 resource "oci_core_vcn" "ansible_lab" {
-  compartment_id = "ocid1.tenancy.oc1..aaaaaaaadmtufspqmm6zoiip5gpos7feuur4ls3znevb2efz6dwhimo4nsqq"
+  compartment_id = local.compartment_id
 
   cidr_blocks = [
     "10.10.0.0/16"
@@ -18,7 +18,7 @@ resource "oci_core_vcn" "ansible_lab" {
 }
 
 resource "oci_core_subnet" "ansible_public" {
-  compartment_id = "ocid1.tenancy.oc1..aaaaaaaadmtufspqmm6zoiip5gpos7feuur4ls3znevb2efz6dwhimo4nsqq"
+  compartment_id = local.compartment_id
 
   vcn_id     = oci_core_vcn.ansible_lab.id
   cidr_block = "10.10.1.0/24"
@@ -26,10 +26,10 @@ resource "oci_core_subnet" "ansible_public" {
   display_name = "ansible-public-subnet"
   dns_label    = "ansiblepublicsu"
 
-  route_table_id = "ocid1.routetable.oc1.eu-frankfurt-1.aaaaaaaawembxvrm2i47psrxwboe7ymkywewb325f5zkhhvsokkal5355daq"
+  route_table_id = oci_core_route_table.ansible_lab_default.id
 
   security_list_ids = [
-    "ocid1.securitylist.oc1.eu-frankfurt-1.aaaaaaaa5mghzpnvbmhowyr6oqnzrioiqxqlod7jqy2kic5t63ub4wcrzs5a"
+    oci_core_security_list.ansible_lab_default.id
   ]
 
   prohibit_public_ip_on_vnic = false
@@ -45,7 +45,7 @@ resource "oci_core_subnet" "ansible_public" {
 }
 
 resource "oci_core_internet_gateway" "ansible_lab" {
-  compartment_id = "ocid1.tenancy.oc1..aaaaaaaadmtufspqmm6zoiip5gpos7feuur4ls3znevb2efz6dwhimo4nsqq"
+  compartment_id = local.compartment_id
   vcn_id         = oci_core_vcn.ansible_lab.id
 
   display_name = "ansible-lab-igw"
@@ -61,7 +61,7 @@ resource "oci_core_internet_gateway" "ansible_lab" {
 }
 
 resource "oci_core_route_table" "ansible_lab_default" {
-  compartment_id = "ocid1.tenancy.oc1..aaaaaaaadmtufspqmm6zoiip5gpos7feuur4ls3znevb2efz6dwhimo4nsqq"
+  compartment_id = local.compartment_id
   vcn_id         = oci_core_vcn.ansible_lab.id
 
   display_name = "Default Route Table for ansible-lab-vcn"
@@ -83,7 +83,7 @@ resource "oci_core_route_table" "ansible_lab_default" {
 }
 
 resource "oci_core_security_list" "ansible_lab_default" {
-  compartment_id = "ocid1.tenancy.oc1..aaaaaaaadmtufspqmm6zoiip5gpos7feuur4ls3znevb2efz6dwhimo4nsqq"
+  compartment_id = local.compartment_id
   vcn_id         = oci_core_vcn.ansible_lab.id
 
   display_name = "Default Security List for ansible-lab-vcn"
