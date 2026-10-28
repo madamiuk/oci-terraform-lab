@@ -12,16 +12,33 @@ locals {
     oci-ansible01 = {
       fault_domain = "FAULT-DOMAIN-2"
       private_ip   = "10.10.1.37"
+
+      ansible_groups = [
+        "oci",
+        "appservers",
+        "monitored_hosts",
+      ]
     }
 
     oci-ansible02 = {
       fault_domain = "FAULT-DOMAIN-1"
       private_ip   = "10.10.1.176"
+
+      ansible_groups = [
+        "oci",
+        "nagios_server",
+      ]
     }
 
     oci-ansible03 = {
       fault_domain = "FAULT-DOMAIN-3"
       private_ip   = "10.10.1.26"
+
+      ansible_groups = [
+        "oci",
+        "oci_database",
+        "monitored_hosts",
+      ]
     }
   }
 

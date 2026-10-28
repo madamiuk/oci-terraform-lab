@@ -64,6 +64,7 @@ output "ansible_hosts" {
       ansible_host = instance.public_ip
       private_ip   = instance.private_ip
       ansible_user = "opc"
+      groups       = local.compute_instances[name].ansible_groups
     }
   }
 }
