@@ -1,0 +1,12 @@
+region = "eu-frankfurt-1"
+
+compartment_id = "ocid1.tenancy.oc1..CHANGE_ME"
+
+availability_domain = "CHANGE_ME1"
+
+vcn_cidr           = "10.10.0.0/16"
+public_subnet_cidr = "10.10.1.0/24"
+
+compute_shape = "VM.Standard.A1.Flex"
+
+compute_image_id = "ocid1.image.oc1.eu-frankfurt-1.CHANGE_ME"
