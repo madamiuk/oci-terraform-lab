@@ -1,10 +1,10 @@
 resource "oci_core_instance" "oci_ansible01" {
-  compartment_id      = "ocid1.tenancy.oc1..aaaaaaaadmtufspqmm6zoiip5gpos7feuur4ls3znevb2efz6dwhimo4nsqq"
-  availability_domain = "ceVm:EU-FRANKFURT-1-AD-1"
+  compartment_id      = local.compartment_id
+  availability_domain = local.availability_domain
   fault_domain        = "FAULT-DOMAIN-2"
 
   display_name = "oci-ansible01"
-  shape        = "VM.Standard.A1.Flex"
+  shape        = local.compute_shape
 
   shape_config {
     ocpus         = 1
@@ -13,7 +13,7 @@ resource "oci_core_instance" "oci_ansible01" {
 
   source_details {
     source_type = "image"
-    source_id   = "ocid1.image.oc1.eu-frankfurt-1.aaaaaaaahm3jhogohzsazvoegxxow2d6gk3ys2czqokwa6y4sgw4mlxmcnsa"
+    source_id   = local.compute_image_id
   }
 
   create_vnic_details {
@@ -27,7 +27,7 @@ resource "oci_core_instance" "oci_ansible01" {
   }
 
   metadata = {
-    ssh_authorized_keys = trimspace(file("/Users/ma/.ssh/id_ed25519.pub"))
+    ssh_authorized_keys = trimspace(file(local.ssh_public_key_file))
   }
 
   lifecycle {
@@ -40,12 +40,12 @@ resource "oci_core_instance" "oci_ansible01" {
 }
 
 resource "oci_core_instance" "oci_ansible02" {
-  compartment_id      = "ocid1.tenancy.oc1..aaaaaaaadmtufspqmm6zoiip5gpos7feuur4ls3znevb2efz6dwhimo4nsqq"
-  availability_domain = "ceVm:EU-FRANKFURT-1-AD-1"
+  compartment_id      = local.compartment_id
+  availability_domain = local.availability_domain
   fault_domain        = "FAULT-DOMAIN-1"
 
   display_name = "oci-ansible02"
-  shape        = "VM.Standard.A1.Flex"
+  shape        = local.compute_shape
 
   shape_config {
     ocpus         = 1
@@ -54,7 +54,7 @@ resource "oci_core_instance" "oci_ansible02" {
 
   source_details {
     source_type = "image"
-    source_id   = "ocid1.image.oc1.eu-frankfurt-1.aaaaaaaahm3jhogohzsazvoegxxow2d6gk3ys2czqokwa6y4sgw4mlxmcnsa"
+    source_id   = local.compute_image_id
   }
 
   create_vnic_details {
@@ -68,7 +68,7 @@ resource "oci_core_instance" "oci_ansible02" {
   }
 
   metadata = {
-    ssh_authorized_keys = trimspace(file("/Users/ma/.ssh/id_ed25519.pub"))
+    ssh_authorized_keys = trimspace(file(local.ssh_public_key_file))
   }
 
   lifecycle {
@@ -81,12 +81,12 @@ resource "oci_core_instance" "oci_ansible02" {
 }
 
 resource "oci_core_instance" "oci_ansible03" {
-  compartment_id      = "ocid1.tenancy.oc1..aaaaaaaadmtufspqmm6zoiip5gpos7feuur4ls3znevb2efz6dwhimo4nsqq"
-  availability_domain = "ceVm:EU-FRANKFURT-1-AD-1"
+  compartment_id      = local.compartment_id
+  availability_domain = local.availability_domain
   fault_domain        = "FAULT-DOMAIN-3"
 
   display_name = "oci-ansible03"
-  shape        = "VM.Standard.A1.Flex"
+  shape        = local.compute_shape
 
   shape_config {
     ocpus         = 1
@@ -95,7 +95,7 @@ resource "oci_core_instance" "oci_ansible03" {
 
   source_details {
     source_type = "image"
-    source_id   = "ocid1.image.oc1.eu-frankfurt-1.aaaaaaaahm3jhogohzsazvoegxxow2d6gk3ys2czqokwa6y4sgw4mlxmcnsa"
+    source_id   = local.compute_image_id
   }
 
   create_vnic_details {
@@ -109,7 +109,7 @@ resource "oci_core_instance" "oci_ansible03" {
   }
 
   metadata = {
-    ssh_authorized_keys = trimspace(file("/Users/ma/.ssh/id_ed25519.pub"))
+    ssh_authorized_keys = trimspace(file(local.ssh_public_key_file))
   }
 
   lifecycle {
