@@ -10,3 +10,5 @@ public_subnet_cidr = "10.10.1.0/24"
 compute_shape = "VM.Standard.A1.Flex"
 
 compute_image_id = "ocid1.image.oc1.eu-frankfurt-1.CHANGE_ME"
+
+ssh_public_key_file = "/path/to/id_ed25519.pub"

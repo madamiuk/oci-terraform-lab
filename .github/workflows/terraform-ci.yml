@@ -31,5 +31,11 @@ jobs:
       - name: Terraform init
         run: terraform init -backend=false
 
+      - name: Create CI SSH public key placeholder
+        run: |
+          echo "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICITestOnlyKeyMaterial000000000000000000000000 CI" > /tmp/terraform-ci.pub
+
       - name: Terraform validate
+        env:
+          TF_VAR_ssh_public_key_file: /tmp/terraform-ci.pub
         run: terraform validate

@@ -6,7 +6,7 @@ locals {
 
   compute_image_id = var.compute_image_id
 
-  ssh_public_key_file = "/Users/ma/.ssh/id_ed25519.pub"
+  ssh_public_key_file = var.ssh_public_key_file
 
   compute_instances = {
     oci-ansible01 = {

@@ -32,3 +32,8 @@ variable "availability_domain" {
   description = "OCI availability domain for compute instances"
   type        = string
 }
+
+variable "ssh_public_key_file" {
+  description = "Path to the SSH public key used for OCI compute instances"
+  type        = string
+}
