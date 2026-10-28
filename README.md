@@ -1,5 +1,7 @@
 # OCI Terraform Lab
 
+[![Terraform CI](https://github.com/madamiuk/oci-terraform-lab/actions/workflows/terraform-ci.yml/badge.svg)](https://github.com/madamiuk/oci-terraform-lab/actions/workflows/terraform-ci.yml)
+
 Terraform laboratory for managing an existing Oracle Cloud Infrastructure environment used for Ansible, monitoring and application deployment exercises.
 
 The project was created by importing an already running OCI laboratory into Terraform and then gradually refactoring the configuration into reusable Infrastructure as Code.
