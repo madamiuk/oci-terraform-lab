@@ -1,6 +1,6 @@
 locals {
-  compartment_id      = "ocid1.tenancy.oc1..aaaaaaaadmtufspqmm6zoiip5gpos7feuur4ls3znevb2efz6dwhimo4nsqq"
-  availability_domain = "ceVm:EU-FRANKFURT-1-AD-1"
+  compartment_id      = var.compartment_id
+  availability_domain = var.availability_domain
 
   compute_shape = var.compute_shape
 
