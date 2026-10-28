@@ -2,7 +2,7 @@ resource "oci_core_vcn" "ansible_lab" {
   compartment_id = local.compartment_id
 
   cidr_blocks = [
-    "10.10.0.0/16"
+    local.vcn_cidr
   ]
 
   display_name = "ansible-lab-vcn"
@@ -21,7 +21,7 @@ resource "oci_core_subnet" "ansible_public" {
   compartment_id = local.compartment_id
 
   vcn_id     = oci_core_vcn.ansible_lab.id
-  cidr_block = "10.10.1.0/24"
+  cidr_block = local.public_subnet_cidr
 
   display_name = "ansible-public-subnet"
   dns_label    = "ansiblepublicsu"
@@ -121,7 +121,7 @@ resource "oci_core_security_list" "ansible_lab_default" {
 
   ingress_security_rules {
     protocol    = "1"
-    source      = "10.10.0.0/16"
+    source      = local.vcn_cidr
     source_type = "CIDR_BLOCK"
     stateless   = false
 
@@ -133,7 +133,7 @@ resource "oci_core_security_list" "ansible_lab_default" {
   ingress_security_rules {
     description = "Allow ICMP echo within Ansible lab VCN"
     protocol    = "1"
-    source      = "10.10.1.0/24"
+    source      = local.public_subnet_cidr
     source_type = "CIDR_BLOCK"
     stateless   = false
 
@@ -145,7 +145,7 @@ resource "oci_core_security_list" "ansible_lab_default" {
   ingress_security_rules {
     description = "Allow NRPE from Nagios server"
     protocol    = "6"
-    source      = "10.10.1.176/32"
+    source      = "${local.compute_instances["oci-ansible02"].private_ip}/32"
     source_type = "CIDR_BLOCK"
     stateless   = false
 
@@ -158,7 +158,7 @@ resource "oci_core_security_list" "ansible_lab_default" {
   ingress_security_rules {
     description = "Allow WildFly [8080] for LAB"
     protocol    = "6"
-    source      = "10.10.1.176/32"
+    source      = "${local.compute_instances["oci-ansible02"].private_ip}/32"
     source_type = "CIDR_BLOCK"
     stateless   = false
 
@@ -171,7 +171,7 @@ resource "oci_core_security_list" "ansible_lab_default" {
   ingress_security_rules {
     description = "Allow PQSql"
     protocol    = "6"
-    source      = "10.10.1.37/32"
+    source      = "${local.compute_instances["oci-ansible01"].private_ip}/32"
     source_type = "CIDR_BLOCK"
     stateless   = false
 
@@ -184,7 +184,7 @@ resource "oci_core_security_list" "ansible_lab_default" {
   ingress_security_rules {
     description = "Nagios PostgreSQL monitoring"
     protocol    = "6"
-    source      = "10.10.1.176/32"
+    source      = "${local.compute_instances["oci-ansible02"].private_ip}/32"
     source_type = "CIDR_BLOCK"
     stateless   = false
 
