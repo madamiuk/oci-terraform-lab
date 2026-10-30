@@ -1,1151 +1,571 @@
 # OCI Terraform Lab
 
-[![Terraform CI](https://github.com/madamiuk/oci-terraform-lab/actions/workflows/terraform-ci.yml/badge.svg)](https://github.com/madamiuk/oci-terraform-lab/actions/workflows/terraform-ci.yml)
+Terraform-managed Oracle Cloud Infrastructure lab used for practical infrastructure automation, Ansible integration, monitoring, and DevOps exercises.
 
-Terraform laboratory for managing an existing Oracle Cloud Infrastructure environment used by the Ansible automation and JobTracker application delivery labs.
+The environment is designed to keep the OCI infrastructure reproducible and declarative while providing a realistic multi-server platform for application deployment, PostgreSQL, Nagios, CI/CD, and monitoring experiments.
 
-The project was created by importing an already running OCI environment into Terraform and then gradually refactoring the configuration into reusable Infrastructure as Code.
+## Architecture
 
-The repository focuses on:
+The lab currently consists of three Oracle Linux instances running in Oracle Cloud Infrastructure in the `eu-frankfurt-1` region.
 
-- adopting existing cloud infrastructure safely
-- zero-drift Terraform management
-- reusable Compute definitions
-- network configuration
-- lifecycle protection
-- Terraform-to-Ansible integration
-- structured Terraform outputs
-- CI validation
-- infrastructure safety
-- separation between infrastructure and configuration management
+```text
+                         Internet
+                            |
+                     Internet Gateway
+                            |
+                  ansible-lab-vcn
+                    10.10.0.0/16
+                            |
+              ansible-public-subnet
+                    10.10.1.0/24
+                            |
+          +-----------------+-----------------+
+          |                 |                 |
+   oci-ansible01     oci-ansible02     oci-ansible03
+   Application       Monitoring         Database
+   WildFly           Nagios             PostgreSQL
+   JobTracker        NRPE checks        JobTracker DB
+```
 
----
+All compute instances use OCI Ampere A1 resources and Oracle Linux 9.
 
-## Current architecture
+Current logical roles:
 
-The current OCI environment contains:
+| Host | Role | Ansible groups |
+|---|---|---|
+| `oci-ansible01` | Application server / WildFly / JobTracker | `oci`, `appservers`, `monitored_hosts` |
+| `oci-ansible02` | Nagios monitoring server | `oci`, `nagios_server` |
+| `oci-ansible03` | PostgreSQL database server | `oci`, `oci_database`, `monitored_hosts` |
 
-- VCN: `ansible-lab-vcn`
-- Public subnet: `ansible-public-subnet`
+The application and database tiers are intentionally separated.
+
+## Terraform-managed infrastructure
+
+Terraform currently manages:
+
+- OCI Virtual Cloud Network
+- Public subnet
 - Internet Gateway
-- Default Route Table
-- Default Security List
-- Three ARM Compute instances based on `VM.Standard.A1.Flex`
-
-Current topology:
-
-```text
-Oracle Cloud Infrastructure
-│
-├── VCN
-│   └── ansible-lab-vcn
-│       └── 10.10.0.0/16
-│
-├── Public subnet
-│   └── ansible-public-subnet
-│       └── 10.10.1.0/24
-│
-├── Internet Gateway
-│
-├── Default Route Table
-│
-├── Default Security List
-│
-└── Compute
-    ├── oci-ansible01
-    │   ├── Oracle Linux 9
-    │   ├── WildFly
-    │   └── JobTracker
-    │
-    ├── oci-ansible02
-    │   ├── Oracle Linux 9
-    │   └── Nagios
-    │
-    └── oci-ansible03
-        ├── Oracle Linux 9
-        ├── PostgreSQL 18
-        └── jobtracker database
-```
-
----
-
-## Compute instances
-
-Current instances:
-
-| Instance | Role | Private IP | Fault Domain |
-|---|---|---:|---|
-| `oci-ansible01` | WildFly / JobTracker application server | `10.10.1.37` | `FAULT-DOMAIN-2` |
-| `oci-ansible02` | Nagios monitoring server | `10.10.1.176` | `FAULT-DOMAIN-1` |
-| `oci-ansible03` | PostgreSQL database server | `10.10.1.26` | `FAULT-DOMAIN-3` |
-
-All three instances use:
-
-- Oracle Linux 9
-- `VM.Standard.A1.Flex`
-- 1 OCPU
-- 6 GB RAM
-- ARM architecture
-- the same OCI VCN and public subnet
-- the same SSH public key
-- public IPv4 addresses
-- separate fault domains
-
-The fault-domain distribution reduces the chance that all laboratory workloads are affected by a single fault-domain failure.
-
----
-
-## Responsibility split
-
-The laboratory intentionally separates infrastructure provisioning from operating-system and application configuration.
-
-### Terraform
-
-Terraform manages the OCI infrastructure layer:
-
-- VCN
-- subnet
-- Internet Gateway
-- route table
-- security list
-- Compute instances
-- infrastructure relationships
-- host metadata exposed through outputs
-
-### Ansible
-
-Ansible manages the configuration layer:
-
-- operating system configuration
-- Java
-- WildFly
-- PostgreSQL
-- Nagios
-- NRPE / monitoring agents
-- firewall configuration inside guest systems
-- application deployment
-- runtime verification
-- end-to-end tests
-
-### JobTracker
-
-JobTracker remains an independent application repository responsible for:
-
-- Java application source code
-- Jakarta EE
-- REST API
-- JPA / Hibernate
-- web frontend
-- application tests
-- Maven build
-- WAR artifact creation
-- application CI
-
-The responsibility model is:
-
-```text
-Terraform
-    |
-    v
-OCI infrastructure
-    |
-    v
-Ansible
-    |
-    v
-Operating system and services
-    |
-    v
-JobTracker deployment
-```
-
----
-
-## Repository integration
-
-The OCI Terraform laboratory is part of a three-repository environment:
-
-```text
-oci-terraform-lab
-        |
-        +--> OCI infrastructure
-        +--> Terraform outputs
-        |
-        v
-ansible-lab
-        |
-        +--> generated OCI inventory
-        +--> configuration management
-        +--> application deployment
-        +--> runtime verification
-        |
-        v
-jobtracker
-        |
-        +--> application code
-        +--> tests
-        +--> WAR artifact
-```
-
-The repositories are intentionally independent.
-
-This allows each layer to be tested and changed without mixing responsibilities.
-
----
-
-## Terraform to Ansible integration
-
-Terraform provides structured infrastructure metadata for Ansible.
-
-The key integration output is:
-
-```text
-ansible_hosts
-```
-
-The output contains information required to build the OCI Ansible inventory.
-
-Conceptually:
-
-```text
-Terraform state
-      |
-      v
-ansible_hosts
-      |
-      v
-Ansible inventory generator
-      |
-      v
-inventory/oci.ini
-      |
-      v
-Ansible
-```
-
-The Ansible repository consumes this output using:
-
-```text
-./scripts/generate-oci-inventory.sh
-```
-
-and:
-
-```text
-./scripts/refresh-oci-inventory.sh
-```
-
-This removes the need to manually maintain OCI host metadata in both Terraform and Ansible.
-
----
-
-## Ansible host metadata
-
-The Terraform output describes host roles in addition to IP addresses.
-
-Current logical grouping includes:
-
-```text
-oci-ansible01
-    groups:
-        oci
-        appservers
-        monitored_hosts
-
-oci-ansible02
-    groups:
-        oci
-        nagios_server
-
-oci-ansible03
-    groups:
-        oci
-        oci_database
-        monitored_hosts
-```
-
-This metadata is used to generate Ansible groups automatically.
-
-The resulting inventory structure is approximately:
-
-```ini
-[oci]
-oci-ansible01
-oci-ansible02
-oci-ansible03
-
-[appservers]
-oci-ansible01
-
-[nagios_server]
-oci-ansible02
-
-[oci_database]
-oci-ansible03
-
-[monitored_hosts]
-oci-ansible01
-oci-ansible03
-```
-
-Terraform therefore provides infrastructure facts while Ansible decides how those groups are configured.
-
----
-
-## Repository structure
-
-Typical repository layout:
-
-```text
-oci-terraform-lab/
-├── .github/
-│   └── workflows/
-│       └── terraform-ci.yml
-│
-├── .gitignore
-├── .terraform.lock.hcl
-├── README.md
-├── compute.tf
-├── data.tf
-├── locals.tf
-├── network.tf
-├── outputs.tf
-├── provider.tf
-├── terraform.tfvars.example
-├── variables.tf
-└── versions.tf
-```
-
----
-
-## versions.tf
-
-`versions.tf` defines:
-
-- required Terraform version
-- OCI Terraform provider
-- provider version constraints
-
-The laboratory currently uses Terraform 1.17.x and the OCI provider 9.x.
-
-Exact provider versions are controlled through Terraform dependency constraints and:
-
-```text
-.terraform.lock.hcl
-```
-
----
-
-## provider.tf
-
-The OCI provider configuration is maintained in:
-
-```text
-provider.tf
-```
-
-Authentication uses the local OCI CLI configuration.
-
-Typical location:
-
-```text
-~/.oci/config
-```
-
-The OCI API private key is stored outside the repository.
-
-The region is supplied through Terraform configuration rather than hardcoded into individual resources.
-
----
-
-## network.tf
-
-`network.tf` manages the OCI networking layer.
-
-Current resources include:
-
-```text
-VCN
-Public subnet
-Internet Gateway
-Default Route Table
-Default Security List
-```
-
-Terraform resource references are used instead of hardcoded OCIDs wherever possible.
-
-Example:
-
-```hcl
-route_table_id = oci_core_route_table.ansible_lab_default.id
-```
-
-and:
-
-```hcl
-security_list_ids = [
-  oci_core_security_list.ansible_lab_default.id
-]
-```
-
-This keeps dependencies explicit and reduces duplicated infrastructure identifiers.
-
----
-
-## compute.tf
-
-Compute instances are managed using a single resource definition with:
-
-```hcl
-for_each
-```
-
-Conceptually:
-
-```hcl
-resource "oci_core_instance" "ansible" {
-  for_each = local.compute_instances
-
-  compartment_id      = local.compartment_id
-  availability_domain = local.availability_domain
-  fault_domain        = each.value.fault_domain
-
-  display_name = each.key
-  shape        = local.compute_shape
-
-  shape_config {
-    ocpus         = 1
-    memory_in_gbs = 6
-  }
-}
-```
-
-Using `for_each` avoids maintaining several nearly identical Compute resource blocks.
-
-It also makes host-specific configuration easier to manage through:
-
-```text
-local.compute_instances
-```
-
----
-
-## locals.tf
-
-`locals.tf` contains derived and shared values.
-
-The Compute instance map contains host-specific metadata such as:
-
-```hcl
-compute_instances = {
-  oci-ansible01 = {
-    fault_domain = "FAULT-DOMAIN-2"
-    private_ip   = "10.10.1.37"
-  }
-
-  oci-ansible02 = {
-    fault_domain = "FAULT-DOMAIN-1"
-    private_ip   = "10.10.1.176"
-  }
-
-  oci-ansible03 = {
-    fault_domain = "FAULT-DOMAIN-3"
-    private_ip   = "10.10.1.26"
-  }
-}
-```
-
-The same data is reused by:
-
-- Compute resources
-- network rules
-- Terraform outputs
-- Ansible inventory metadata
-
-This reduces duplication and configuration drift.
-
----
-
-## variables.tf
-
-`variables.tf` declares environment-specific Terraform variables.
-
-Examples include:
-
-- OCI region
-- compartment OCID
-- availability domain
-- VCN CIDR
-- subnet CIDR
-- Compute shape
-- Compute image OCID
-
-Environment-specific values are separated from reusable resource definitions.
-
----
-
-## terraform.tfvars
-
-The real environment values are maintained locally in:
-
-```text
-terraform.tfvars
-```
-
-This file is intentionally excluded from Git.
-
-The repository provides:
-
-```text
-terraform.tfvars.example
-```
-
-as a safe template.
-
-Example:
-
-```hcl
-region = "eu-frankfurt-1"
-
-compartment_id = "ocid1.compartment.oc1..CHANGE_ME"
-
-availability_domain = "CHANGE_ME"
-
-vcn_cidr           = "10.10.0.0/16"
-public_subnet_cidr = "10.10.1.0/24"
-
-compute_shape = "VM.Standard.A1.Flex"
-
-compute_image_id = "ocid1.image.oc1.eu-frankfurt-1.CHANGE_ME"
-```
-
-Real OCIDs and environment-specific values must not be committed accidentally.
-
----
-
-## Terraform state
-
-Terraform state is stored locally.
-
-State files are excluded from Git:
-
-```text
-*.tfstate
-*.tfstate.*
-```
-
-Terraform state may contain:
-
-- infrastructure identifiers
-- resource metadata
-- environment topology
-- sensitive implementation details
-
-State must never be committed to the repository.
-
----
-
-## OCI authentication
-
-Terraform uses OCI API authentication configured outside the repository.
-
-Typical configuration:
-
-```text
-~/.oci/config
-```
-
-The associated OCI API private key is also stored outside Git.
-
-Neither the OCI configuration nor the API private key must ever be committed.
-
----
-
-## SSH authentication
-
-Compute instances use an SSH public key.
-
-Terraform reads the public key using:
-
-```hcl
-ssh_authorized_keys = trimspace(file(local.ssh_public_key_file))
-```
-
-The use of:
-
-```text
-trimspace()
-```
-
-is intentional.
-
-During the initial import and refactoring process, using the raw result of:
-
-```hcl
-file()
-```
-
-introduced a newline difference in instance metadata.
-
-Terraform then interpreted the metadata change as requiring instance replacement.
-
-Using `trimspace()` removes that unwanted difference and keeps the imported Compute resources stable.
-
----
-
-## Imported infrastructure
-
-The existing OCI environment was adopted into Terraform instead of being recreated.
-
-The import process followed this pattern:
-
-```text
-existing OCI resource
-        |
-        v
-describe resource in HCL
-        |
-        v
-terraform import
-        |
-        v
-terraform plan
-        |
-        v
-zero-drift verification
-```
-
-Imported resources include:
-
-```text
-VCN
-Public subnet
-Internet Gateway
-Default Route Table
-Default Security List
-oci-ansible01
-oci-ansible02
-oci-ansible03
-```
-
-This allowed the laboratory to move from manually created infrastructure to Infrastructure as Code without destroying existing systems.
-
----
-
-## Import methodology
-
-Each imported resource followed the same workflow:
-
-```text
-1. Describe the existing OCI resource in HCL
-2. terraform fmt
-3. terraform validate
-4. terraform import
-5. terraform plan
-6. Require a zero-drift plan
-7. Commit the verified milestone
-```
-
-The expected result after a successful import is:
-
-```text
-No changes. Your infrastructure matches the configuration.
-```
-
-A resource was not considered successfully adopted until Terraform reached zero drift.
-
----
-
-## Zero-drift policy
-
-Zero drift is treated as a core requirement.
-
-After importing, refactoring or changing infrastructure definitions:
+- Route Table
+- Security List
+- Three Oracle Linux compute instances
+- SSH key configuration
+- Ansible host metadata
+- OCI Notifications topic
+- E-mail notification subscription
+- SMS notification subscription
+- OCI Monitoring alarms
+
+Critical OCI resources use lifecycle protection where appropriate to reduce the risk of accidental destruction.
+
+Terraform changes are always reviewed with:
 
 ```bash
-terraform plan
-```
-
-should return:
-
-```text
-No changes. Your infrastructure matches the configuration.
-```
-
-Unexpected changes are investigated before any apply operation.
-
-Particular attention is paid to:
-
-```text
-+
--
--/+
-```
-
-for existing resources.
-
-A replacement plan for an existing critical resource is treated as a warning condition, not as something to apply automatically.
-
----
-
-## Safety controls
-
-Critical imported resources use:
-
-```hcl
-lifecycle {
-  prevent_destroy = true
-}
-```
-
-This protects important resources from accidental destruction.
-
-During initial Compute import work Terraform detected a metadata difference and proposed:
-
-```text
--/+ destroy and then create replacement
-```
-
-The lifecycle protection prevented that replacement.
-
-The configuration also ignores selected provider-managed metadata where required to prevent irrelevant drift.
-
-Infrastructure safety is more important than forcing a Terraform apply.
-
----
-
-## Terraform apply policy
-
-The laboratory does not treat:
-
-```bash
-terraform apply
-```
-
-as a routine command to run after every edit.
-
-The expected workflow is:
-
-```text
 terraform fmt
-      |
-      v
 terraform validate
-      |
-      v
 terraform plan
-      |
-      v
-review
-      |
-      +--> unexpected change -> investigate
-      |
-      `--> expected change -> apply if required
 ```
 
-For imported resources, a clean zero-drift plan remains the normal expected state.
-
----
-
-## Compute state refactoring
-
-The three Compute instances were initially imported under separate Terraform resource addresses:
+A normal fully synchronized environment should report:
 
 ```text
-oci_core_instance.oci_ansible01
-oci_core_instance.oci_ansible02
-oci_core_instance.oci_ansible03
+No changes. Your infrastructure matches the configuration.
 ```
 
-After introducing:
+## Network
 
-```hcl
-for_each
-```
-
-their Terraform state addresses were migrated using:
+VCN:
 
 ```text
-terraform state mv
+10.10.0.0/16
 ```
 
-to:
+Public subnet:
 
 ```text
-oci_core_instance.ansible["oci-ansible01"]
-oci_core_instance.ansible["oci-ansible02"]
-oci_core_instance.ansible["oci-ansible03"]
+10.10.1.0/24
 ```
 
-This allowed the HCL structure to be refactored without recreating any Compute instance.
+The hosts communicate internally using their private OCI addresses.
 
-The change was considered complete only after:
+Public addresses are intentionally not documented in this repository.
+
+Application ports such as WildFly HTTP are not intended to be exposed directly to the Internet. Administrative access is performed over SSH and, where necessary, local SSH tunnels.
+
+## Compute configuration
+
+The current lab uses OCI Ampere A1 instances with approximately:
+
+```text
+1 OCPU
+6 GB RAM
+Oracle Linux 9
+aarch64
+```
+
+The machines are distributed across fault domains where possible.
+
+The instance definitions are maintained centrally and used as the source of metadata for both Terraform and Ansible integration.
+
+## Ansible integration
+
+Terraform exports host metadata through the `ansible_hosts` output.
+
+Example:
 
 ```bash
-terraform plan
+terraform output ansible_hosts
 ```
 
-again returned zero drift.
+The output contains:
 
----
+- host name
+- Ansible SSH user
+- public connection address
+- private OCI address
+- Ansible groups
 
-## Network security
+The same metadata is consumed by the Ansible inventory generation workflow.
 
-The OCI Security List contains rules required by the laboratory infrastructure.
+This avoids maintaining separate hardcoded host-role mappings in Terraform and Ansible.
 
-These include selected traffic for:
+Conceptually:
 
+```text
+Terraform compute definition
+        |
+        +--> OCI instance
+        |
+        +--> private/public addresses
+        |
+        +--> Ansible groups
+        |
+        +--> generated Ansible inventory
+```
+
+## OCI Monitoring
+
+OCI Monitoring provides an infrastructure-level monitoring layer independent of Nagios.
+
+The current configuration manages **15 OCI alarms**.
+
+### Compute alarms
+
+Each of the three instances has:
+
+- High CPU utilization
+- High memory utilization
+- High load average
+
+This results in:
+
+```text
+3 hosts × 3 compute alarms = 9 alarms
+```
+
+Metrics are provided by the OCI Compute Agent using the `oci_computeagent` namespace.
+
+The Oracle Cloud Agent and monitoring plugins run on all three instances.
+
+### Health alarms
+
+Each instance additionally has two infrastructure-health checks:
+
+- instance accessibility
+- OCI infrastructure availability
+
+This results in:
+
+```text
+3 hosts × 2 health alarms = 6 alarms
+```
+
+The health alarms use OCI-native metrics and do not depend on the guest monitoring agent.
+
+Total:
+
+```text
+9 compute alarms
++ 6 health alarms
+-----------------
+15 OCI alarms
+```
+
+## Monitoring policy
+
+Monitoring thresholds are defined centrally and applied through Terraform without duplicating alarm resource blocks.
+
+A common base policy exists for compute metrics, with group-specific overrides derived from the same `ansible_groups` metadata that describes the server role.
+
+Conceptually:
+
+```text
+compute instance
+      |
+      +--> ansible_groups
+               |
+               +--> common monitoring defaults
+               |
+               +--> group-specific overrides
+                           |
+                           +--> effective alarm policy
+                                      |
+                                      +--> OCI Monitoring alarm
+```
+
+This allows the monitoring policy to follow the function of each server without maintaining a second host-to-role mapping.
+
+### Default / application / monitoring server thresholds
+
+For `appservers` and `nagios_server`:
+
+| Metric | Warning threshold | Duration |
+|---|---:|---:|
+| CPU utilization | > 80% | 5 minutes |
+| Memory utilization | > 85% | 5 minutes |
+| Load average | > 1.5 | 5 minutes |
+
+Severity:
+
+```text
+WARNING
+```
+
+### Database server thresholds
+
+The PostgreSQL server uses more conservative thresholds through the `oci_database` group override:
+
+| Metric | Warning threshold | Duration |
+|---|---:|---:|
+| CPU utilization | > 75% | 5 minutes |
+| Memory utilization | > 80% | 5 minutes |
+| Load average | > 1.2 | 5 minutes |
+
+Severity:
+
+```text
+WARNING
+```
+
+Health and infrastructure availability alarms use:
+
+```text
+Severity: CRITICAL
+Pending duration: 5 minutes
+```
+
+## DRY alarm implementation
+
+Compute alarms are generated from a central definition map and Terraform `for_each`.
+
+There is no separate resource block for every host and metric.
+
+The model is approximately:
+
+```text
+alarm definitions
+      |
+      +--> high_cpu
+      +--> high_memory
+      +--> high_load
+              |
+              +--> host/group policy
+                      |
+                      +--> oci-ansible01
+                      +--> oci-ansible02
+                      +--> oci-ansible03
+```
+
+This allows new monitored hosts or alarm types to be added without copying entire Terraform resource definitions.
+
+Health alarms follow the same pattern using their own definition map.
+
+## OCI Notifications
+
+All OCI alarms publish to one central Notifications topic:
+
+```text
+ansible-lab-alerts
+```
+
+The topic currently has two active notification channels:
+
+```text
+OCI Monitoring alarms
+        |
+        v
+ansible-lab-alerts
+        |
+        +--> EMAIL
+        |
+        +--> SMS
+```
+
+Both endpoint values are handled as sensitive Terraform variables.
+
+The repository does not contain the actual e-mail address or telephone number.
+
+Example shell configuration:
+
+```bash
+export TF_VAR_notification_email='user@example.com'
+export TF_VAR_notification_sms_phone='+48XXXXXXXXX'
+```
+
+Sensitive notification endpoints must never be committed to Git.
+
+## Alarm validation
+
+The notification pipeline was tested using a real CPU utilization alarm on `oci-ansible01`.
+
+A controlled CPU load was generated until the OCI metric exceeded the configured threshold for the required pending duration.
+
+The alarm successfully transitioned:
+
+```text
+OK
+ |
+ v
+FIRING
+ |
+ v
+OK
+```
+
+OCI reported:
+
+```text
+OK_TO_FIRING
+```
+
+and after the load was removed:
+
+```text
+FIRING_TO_OK
+```
+
+Both transitions were confirmed through OCI Monitoring alarm history.
+
+The `FIRING` notification was successfully delivered through:
+
+```text
+EMAIL
+SMS
+```
+
+The e-mail notification included the actual OCI metric query, instance dimensions, severity, alarm state, and trigger details.
+
+This confirms the full production notification path:
+
+```text
+OCI Compute metric
+        |
+        v
+OCI Monitoring
+        |
+        v
+Alarm evaluation
+        |
+        v
+OCI Notifications Topic
+        |
+        +--> EMAIL
+        |
+        +--> SMS
+```
+
+## Nagios and OCI Monitoring
+
+The lab intentionally uses two complementary monitoring layers.
+
+### Nagios
+
+Nagios monitors the operating systems and application services from inside the environment.
+
+Current checks include system metrics and service-specific checks such as:
+
+- PING
 - SSH
-- ICMP
-- NRPE / monitoring
-- WildFly internal access
-- PostgreSQL internal access
+- load
+- memory
+- root filesystem
+- swap
+- process counts
+- WildFly HTTP
+- PostgreSQL process
+- PostgreSQL connectivity
+- PostgreSQL connection count
+- PostgreSQL database size
 
-Host-specific rules reuse information from:
+NRPE is installed on monitored hosts and Nagios communicates with them over the private OCI network.
 
-```text
-local.compute_instances
-```
+Nagios thresholds are parameterized in Ansible and support group-specific overrides.
 
-instead of duplicating private IP addresses throughout the Terraform configuration.
+### OCI Monitoring
 
-This improves consistency between Compute definitions and security rules.
+OCI Monitoring observes the infrastructure from the cloud platform itself.
 
----
+It provides:
 
-## Application network design
+- CPU monitoring
+- memory monitoring
+- load monitoring
+- instance accessibility monitoring
+- infrastructure-health monitoring
+- external notifications through e-mail and SMS
 
-JobTracker runs on:
+This provides monitoring even when the guest operating system or Nagios becomes unavailable.
 
-```text
-oci-ansible01
-```
-
-and PostgreSQL runs on:
-
-```text
-oci-ansible03
-```
-
-Application database traffic uses the private OCI network:
-
-```text
-WildFly
-10.10.1.37
-    |
-    | TCP 5432
-    v
-PostgreSQL
-10.10.1.26
-```
-
-The database is intentionally separated from the application host.
-
-WildFly port `8080` is not intended to be generally exposed as the final public application interface.
-
-Application access is handled separately from the Terraform Compute lifecycle.
-
----
-
-## Monitoring architecture
-
-Nagios runs on:
+The two systems therefore cover different failure domains:
 
 ```text
-oci-ansible02
-```
-
-The monitoring server checks the other OCI systems.
-
-Conceptually:
-
-```text
-oci-ansible02
 Nagios
-    |
-    +--> oci-ansible01
-    |       WildFly
-    |       JobTracker
-    |
-    +--> oci-ansible03
-            PostgreSQL
+  |
+  +--> guest OS
+  +--> processes
+  +--> services
+  +--> application checks
+  +--> database checks
+
+OCI Monitoring
+  |
+  +--> cloud metrics
+  +--> instance accessibility
+  +--> infrastructure health
+  +--> external EMAIL/SMS notification
 ```
 
-Terraform provides the infrastructure.
+## Notification topic output
 
-Ansible configures monitoring services, plugins and host definitions.
-
----
-
-## Terraform outputs
-
-Terraform outputs are used for both human inspection and automation.
-
-The repository exports infrastructure information such as:
-
-- instance metadata
-- IP addressing
-- host roles
-- Ansible group membership
-
-The most important integration output is:
-
-```text
-ansible_hosts
-```
-
-which is consumed by the Ansible laboratory.
-
-This turns Terraform into the authoritative source of OCI host metadata while keeping configuration management responsibilities inside Ansible.
-
----
-
-## Standard workflow
-
-Initialize the repository:
+Terraform exposes the Notifications topic OCID:
 
 ```bash
-terraform init
+terraform output -raw notification_topic_id
 ```
 
-Format configuration:
+This can be used for diagnostics or controlled test publication.
+
+Manual message publication can be performed with OCI CLI:
+
+```bash
+oci ons message publish \
+  --topic-id "$(terraform output -raw notification_topic_id)" \
+  --title "Ansible Lab Test" \
+  --body "Test OCI Notifications"
+```
+
+For SMS validation, a real OCI Monitoring alarm should be used because SMS delivery is intended for supported OCI service-generated notification scenarios.
+
+## Security
+
+The project follows several security rules:
+
+- private SSH keys are never stored in the repository
+- Terraform state files must not be committed
+- notification e-mail addresses are not stored in tracked files
+- SMS telephone numbers are not stored in tracked files
+- Terraform sensitive variables are used for notification endpoints
+- application secrets are managed separately through Ansible Vault
+- service ports are not unnecessarily exposed to the public Internet
+- internal server communication uses OCI private addresses
+
+Always inspect:
+
+```bash
+git status
+```
+
+before committing infrastructure changes.
+
+## Terraform state safety
+
+Terraform state may contain sensitive infrastructure information and must remain outside Git.
+
+Before committing:
+
+```bash
+git status
+```
+
+Verify that no files such as these are staged:
+
+```text
+terraform.tfstate
+terraform.tfstate.backup
+*.tfplan
+tfplan.*
+```
+
+Saved Terraform plans used for controlled applies should be removed after use.
+
+Example:
+
+```bash
+rm -f tfplan.*
+```
+
+## Typical workflow
+
+Format and validate:
 
 ```bash
 terraform fmt
-```
-
-Validate Terraform:
-
-```bash
 terraform validate
 ```
 
-Review infrastructure state:
+Review infrastructure changes:
 
 ```bash
 terraform plan
 ```
 
-The preferred result for the current imported environment is:
+For important changes, save the reviewed plan:
+
+```bash
+terraform plan -out=tfplan
+terraform apply tfplan
+rm -f tfplan
+```
+
+Verify zero drift:
+
+```bash
+terraform plan
+```
+
+Expected result:
 
 ```text
 No changes. Your infrastructure matches the configuration.
 ```
 
-Only when a change is intentional and fully understood should:
+## CI validation
 
-```bash
-terraform apply
-```
+The repository contains Terraform CI validation.
 
-be considered.
+The pipeline checks Terraform configuration before infrastructure changes are accepted into the main branch.
 
----
-
-## Terraform CI
-
-GitHub Actions validates the Terraform repository automatically.
-
-Workflow:
-
-```text
-.github/workflows/terraform-ci.yml
-```
-
-The CI pipeline validates the Terraform configuration without modifying OCI infrastructure.
-
-Typical validation flow:
-
-```text
-GitHub push / pull request
-        |
-        v
-checkout
-        |
-        v
-Terraform setup
-        |
-        v
-terraform fmt check
-        |
-        v
-terraform init
-        |
-        v
-terraform validate
-```
-
-The CI pipeline is intentionally non-destructive.
-
-It does not automatically run:
-
-```text
-terraform apply
-```
-
-against the OCI laboratory.
-
-Infrastructure changes therefore remain controlled and reviewable.
-
----
-
-## Git policy
-
-The repository tracks Terraform source code and dependency information.
-
-Tracked examples:
-
-```text
-*.tf
-.terraform.lock.hcl
-terraform.tfvars.example
-README.md
-.github/workflows/
-```
-
-Ignored examples:
-
-```text
-.terraform/
-*.tfstate
-*.tfstate.*
-*.tfvars
-*.tfvars.json
-.terraformrc
-terraform.rc
-```
-
-The repository must never contain:
-
-- Terraform state
-- OCI API private keys
-- private SSH keys
-- real secrets
-- local OCI credentials
-
----
-
-## Current integration workflow
-
-The current end-to-end infrastructure/configuration relationship is:
-
-```text
-GitHub
-   |
-   v
-Terraform CI
-   |
-   v
-Terraform source
-   |
-   v
-OCI infrastructure
-   |
-   v
-Terraform outputs
-   |
-   v
-ansible_hosts
-   |
-   v
-Ansible inventory generation
-   |
-   v
-Ansible configuration
-   |
-   +--> WildFly
-   +--> PostgreSQL
-   +--> Nagios
-   |
-   v
-JobTracker deployment
-   |
-   v
-Runtime verification
-```
-
-This integration is already operational.
-
-It is no longer a planned future step.
-
----
+The SSH public key configuration is designed to remain portable in CI and does not depend on a workstation-specific absolute path.
 
 ## Current status
 
-The current Terraform configuration manages:
+The current environment includes:
 
-```text
-OCI Network
-├── VCN
-├── Public Subnet
-├── Internet Gateway
-├── Default Route Table
-└── Default Security List
+- OCI VCN and subnet managed by Terraform
+- three Oracle Linux 9 instances
+- Terraform-to-Ansible inventory integration
+- WildFly application server
+- PostgreSQL database server
+- Nagios monitoring server
+- JobTracker application infrastructure
+- parameterized Nagios thresholds
+- role-aware OCI monitoring policy
+- 15 OCI Monitoring alarms
+- OCI Notifications topic
+- active e-mail notification channel
+- active SMS notification channel
+- tested `OK → FIRING → OK` alarm lifecycle
+- confirmed e-mail and SMS alarm delivery
+- zero Terraform drift after deployment
 
-OCI Compute
-├── oci-ansible01
-├── oci-ansible02
-└── oci-ansible03
-```
-
-The Compute configuration has been consolidated using:
-
-```text
-for_each
-```
-
-Terraform outputs provide host metadata to Ansible.
-
-The repository is validated through GitHub Actions.
-
-The imported infrastructure remains protected with lifecycle safeguards.
-
-The normal expected Terraform plan is:
-
-```text
-No changes. Your infrastructure matches the configuration.
-```
-
----
-
-## Development principles
-
-### Zero drift
-
-Imported infrastructure should match Terraform configuration exactly.
-
-### Review before apply
-
-Unexpected resource changes are investigated instead of applied blindly.
-
-### Prevent accidental destruction
-
-Critical infrastructure uses lifecycle protection.
-
-### Separate responsibilities
-
-```text
-Terraform -> infrastructure
-Ansible   -> system configuration and deployment
-JobTracker -> application behavior
-```
-
-### Do not duplicate infrastructure metadata
-
-Shared infrastructure values should be derived from a common Terraform source where possible.
-
-### Keep secrets outside Git
-
-Terraform state, OCI credentials and private keys must remain local and protected.
-
-### Prefer refactoring over recreation
-
-Existing infrastructure should not be destroyed simply to improve Terraform code structure.
-
----
-
-## Planned development
-
-The main remaining Terraform development areas are:
-
-- evaluate remote Terraform
+The lab is intended to remain reproducible, idempotent, and suitable for practical Linux administration, Ansible, Terraform, monitoring, and DevOps exercises.

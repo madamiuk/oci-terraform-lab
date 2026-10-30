@@ -11,57 +11,158 @@ resource "oci_ons_subscription" "ansible_lab_email" {
   endpoint       = var.notification_email
 }
 
+resource "oci_ons_subscription" "ansible_lab_sms" {
+  compartment_id = var.compartment_id
+  topic_id       = oci_ons_notification_topic.ansible_lab_alerts.id
+  protocol       = "SMS"
+  endpoint       = var.notification_sms_phone
+}
+
+
+# ---------------------------------------------------------------------------
+# Compute monitoring policy
+# ---------------------------------------------------------------------------
+
 locals {
   compute_alarm_definitions = {
     high_cpu = {
-      display_suffix   = "high-cpu"
-      namespace        = "oci_computeagent"
-      metric           = "CpuUtilization"
-      interval         = "1m"
-      condition        = ".mean() > 80"
-      severity         = "WARNING"
-      pending_duration = "PT5M"
-      body             = "CPU utilization has exceeded 80% for at least 5 minutes."
+      display_suffix = "high-cpu"
+      namespace      = "oci_computeagent"
+      metric         = "CpuUtilization"
+      interval       = "1m"
+      aggregation    = ".mean()"
+
+      default = {
+        threshold        = 80
+        severity         = "WARNING"
+        pending_duration = "PT5M"
+      }
+
+      body = "CPU utilization has exceeded the configured threshold."
     }
 
     high_memory = {
-      display_suffix   = "high-memory"
-      namespace        = "oci_computeagent"
-      metric           = "MemoryUtilization"
-      interval         = "1m"
-      condition        = ".mean() > 85"
-      severity         = "WARNING"
-      pending_duration = "PT5M"
-      body             = "Memory utilization has exceeded 85% for at least 5 minutes."
+      display_suffix = "high-memory"
+      namespace      = "oci_computeagent"
+      metric         = "MemoryUtilization"
+      interval       = "1m"
+      aggregation    = ".mean()"
+
+      default = {
+        threshold        = 85
+        severity         = "WARNING"
+        pending_duration = "PT5M"
+      }
+
+      body = "Memory utilization has exceeded the configured threshold."
     }
 
     high_load = {
-      display_suffix   = "high-load"
-      namespace        = "oci_computeagent"
-      metric           = "LoadAverage"
-      interval         = "1m"
-      condition        = ".mean() > 1.5"
-      severity         = "WARNING"
-      pending_duration = "PT5M"
-      body             = "Load average has exceeded 1.5 for at least 5 minutes."
+      display_suffix = "high-load"
+      namespace      = "oci_computeagent"
+      metric         = "LoadAverage"
+      interval       = "1m"
+      aggregation    = ".mean()"
+
+      default = {
+        threshold        = 1.5
+        severity         = "WARNING"
+        pending_duration = "PT5M"
+      }
+
+      body = "Load average has exceeded the configured threshold."
+    }
+  }
+
+  monitoring_group_overrides = {
+    appservers = {
+      high_cpu = {
+        threshold        = 80
+        severity         = "WARNING"
+        pending_duration = "PT5M"
+      }
+
+      high_memory = {
+        threshold        = 85
+        severity         = "WARNING"
+        pending_duration = "PT5M"
+      }
+
+      high_load = {
+        threshold        = 1.5
+        severity         = "WARNING"
+        pending_duration = "PT5M"
+      }
+    }
+
+    nagios_server = {
+      high_cpu = {
+        threshold        = 80
+        severity         = "WARNING"
+        pending_duration = "PT5M"
+      }
+
+      high_memory = {
+        threshold        = 85
+        severity         = "WARNING"
+        pending_duration = "PT5M"
+      }
+
+      high_load = {
+        threshold        = 1.5
+        severity         = "WARNING"
+        pending_duration = "PT5M"
+      }
+    }
+
+    oci_database = {
+      high_cpu = {
+        threshold        = 75
+        severity         = "WARNING"
+        pending_duration = "PT5M"
+      }
+
+      high_memory = {
+        threshold        = 80
+        severity         = "WARNING"
+        pending_duration = "PT5M"
+      }
+
+      high_load = {
+        threshold        = 1.2
+        severity         = "WARNING"
+        pending_duration = "PT5M"
+      }
     }
   }
 
   compute_alarms = merge([
     for alarm_name, alarm in local.compute_alarm_definitions : {
       for host_name, instance in oci_core_instance.ansible :
-      "${host_name}:${alarm_name}" => merge(alarm, {
-        host_name   = host_name
-        instance_id = instance.id
-      })
+      "${host_name}:${alarm_name}" => merge(
+        alarm,
+        alarm.default,
+        merge(
+          concat(
+            [{}],
+            [
+              for group_name in local.compute_instances[host_name].ansible_groups :
+              try(
+                local.monitoring_group_overrides[group_name][alarm_name],
+                {}
+              )
+            ]
+          )...
+        ),
+        {
+          host_name   = host_name
+          instance_id = instance.id
+        }
+      )
     }
   ]...)
 }
 
-moved {
-  from = oci_monitoring_alarm.oci_ansible01_high_cpu
-  to   = oci_monitoring_alarm.compute["oci-ansible01:high_cpu"]
-}
 
 resource "oci_monitoring_alarm" "compute" {
   for_each = local.compute_alarms
@@ -73,11 +174,12 @@ resource "oci_monitoring_alarm" "compute" {
   namespace    = each.value.namespace
 
   query = format(
-    "%s[%s]{resourceId = \"%s\"}%s",
+    "%s[%s]{resourceId = \"%s\"}%s > %v",
     each.value.metric,
     each.value.interval,
     each.value.instance_id,
-    each.value.condition
+    each.value.aggregation,
+    each.value.threshold
   )
 
   severity         = each.value.severity
@@ -90,8 +192,26 @@ resource "oci_monitoring_alarm" "compute" {
 
   message_format = "ONS_OPTIMIZED"
 
-  body = "${each.value.host_name}: ${each.value.body}"
+  body = format(
+    "%s: %s Threshold: %v.",
+    each.value.host_name,
+    each.value.body,
+    each.value.threshold
+  )
 }
+
+
+# Keep Terraform state continuity after migration from the original
+# single oci-ansible01 CPU alarm.
+moved {
+  from = oci_monitoring_alarm.oci_ansible01_high_cpu
+  to   = oci_monitoring_alarm.compute["oci-ansible01:high_cpu"]
+}
+
+
+# ---------------------------------------------------------------------------
+# Instance and infrastructure health monitoring
+# ---------------------------------------------------------------------------
 
 locals {
   health_alarm_definitions = {
@@ -121,13 +241,17 @@ locals {
   health_alarms = merge([
     for alarm_name, alarm in local.health_alarm_definitions : {
       for host_name, instance in oci_core_instance.ansible :
-      "${host_name}:${alarm_name}" => merge(alarm, {
-        host_name   = host_name
-        instance_id = instance.id
-      })
+      "${host_name}:${alarm_name}" => merge(
+        alarm,
+        {
+          host_name   = host_name
+          instance_id = instance.id
+        }
+      )
     }
   ]...)
 }
+
 
 resource "oci_monitoring_alarm" "health" {
   for_each = local.health_alarms
@@ -157,11 +281,4 @@ resource "oci_monitoring_alarm" "health" {
   message_format = "ONS_OPTIMIZED"
 
   body = "${each.value.host_name}: ${each.value.body}"
-}
-
-resource "oci_ons_subscription" "ansible_lab_sms" {
-  compartment_id = var.compartment_id
-  topic_id       = oci_ons_notification_topic.ansible_lab_alerts.id
-  protocol       = "SMS"
-  endpoint       = var.notification_sms_phone
 }
