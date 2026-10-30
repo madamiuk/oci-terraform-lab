@@ -158,3 +158,10 @@ resource "oci_monitoring_alarm" "health" {
 
   body = "${each.value.host_name}: ${each.value.body}"
 }
+
+resource "oci_ons_subscription" "ansible_lab_sms" {
+  compartment_id = var.compartment_id
+  topic_id       = oci_ons_notification_topic.ansible_lab_alerts.id
+  protocol       = "SMS"
+  endpoint       = var.notification_sms_phone
+}

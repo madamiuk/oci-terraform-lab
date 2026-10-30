@@ -43,3 +43,9 @@ variable "notification_email" {
   type        = string
   sensitive   = true
 }
+
+variable "notification_sms_phone" {
+  description = "Phone number for OCI monitoring SMS notifications"
+  type        = string
+  sensitive   = true
+}
