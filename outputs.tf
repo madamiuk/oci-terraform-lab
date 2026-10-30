@@ -68,3 +68,8 @@ output "ansible_hosts" {
     }
   }
 }
+
+output "notification_topic_id" {
+  description = "OCI Notifications topic OCID for Ansible lab alerts"
+  value       = oci_ons_notification_topic.ansible_lab_alerts.id
+}

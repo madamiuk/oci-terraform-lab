@@ -37,3 +37,9 @@ variable "ssh_public_key_file" {
   description = "Path to the SSH public key used for OCI compute instances"
   type        = string
 }
+
+variable "notification_email" {
+  description = "Email address for OCI monitoring notifications"
+  type        = string
+  sensitive   = true
+}
